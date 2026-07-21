@@ -56,4 +56,39 @@ app.post('/tasks', (req, res) => {
   res.status(201).json(newTask);
 });
 
+// --- Stage 4: update & delete --------------------------------------------
+
+app.put('/tasks/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const task = tasks.find((t) => t.id === id);
+  if (!task) {
+    return res.status(404).json({ error: `Task ${id} not found` });
+  }
+
+  const { title, done } = req.body ?? {};
+  if (title !== undefined && (typeof title !== 'string' || !title.trim())) {
+    return res.status(400).json({ error: 'title must not be empty' });
+  }
+  if (done !== undefined && typeof done !== 'boolean') {
+    return res.status(400).json({ error: 'done must be a boolean' });
+  }
+  if (title === undefined && done === undefined) {
+    return res.status(400).json({ error: 'provide title and/or done to update' });
+  }
+
+  if (title !== undefined) task.title = title;
+  if (done !== undefined) task.done = done;
+  res.status(200).json(task);
+});
+
+app.delete('/tasks/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const index = tasks.findIndex((t) => t.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: `Task ${id} not found` });
+  }
+  tasks.splice(index, 1);
+  res.status(204).end();
+});
+
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
