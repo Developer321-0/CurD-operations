@@ -2,11 +2,21 @@
 // A small CRUD API for a to-do list.
 
 import express from 'express';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import swaggerUi from 'swagger-ui-express';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const openapiSpec = JSON.parse(readFileSync(path.join(__dirname, 'openapi.json'), 'utf-8'));
 
 const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+
+// --- Stage 5: Swagger UI --------------------------------------------------
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
 // --- Stage 1: root and health endpoints --------------------------------
 
