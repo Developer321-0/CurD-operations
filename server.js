@@ -42,6 +42,34 @@ let tasks = [
 let nextId = 4;
 
 app.get('/tasks', (req, res) => {
+  let result = tasks;
+  const { done, search } = req.query;
+
+  if (done !== undefined) {
+    const wantDone = done === 'true';
+    result = result.filter((t) => t.done === wantDone);
+  }
+  if (search) {
+    const needle = String(search).toLowerCase();
+    result = result.filter((t) => t.title.toLowerCase().includes(needle));
+  }
+
+  res.status(200).json(result);
+});
+
+app.get('/stats', (req, res) => {
+  const total = tasks.length;
+  const done = tasks.filter((t) => t.done).length;
+  res.status(200).json({ total, done, open: total - done });
+});
+
+app.post('/reset', (req, res) => {
+  tasks = [
+    { id: 1, title: 'Buy milk', done: false },
+    { id: 2, title: 'Write report', done: false },
+    { id: 3, title: 'Walk the dog', done: true },
+  ];
+  nextId = 4;
   res.status(200).json(tasks);
 });
 
