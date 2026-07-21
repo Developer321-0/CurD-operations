@@ -9,6 +9,7 @@ import swaggerUi from 'swagger-ui-express';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const openapiSpec = JSON.parse(readFileSync(path.join(__dirname, 'openapi.json'), 'utf-8'));
+const customCss = readFileSync(path.join(__dirname, 'swagger-theme.css'), 'utf-8');
 
 const app = express();
 app.use(express.json());
@@ -16,7 +17,14 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 // --- Stage 5: Swagger UI --------------------------------------------------
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(openapiSpec));
+app.use(
+  '/docs',
+  swaggerUi.serve,
+  swaggerUi.setup(openapiSpec, {
+    customCss,
+    customSiteTitle: 'FlyRank Task API — Docs',
+  })
+);
 
 // --- Stage 1: root and health endpoints --------------------------------
 

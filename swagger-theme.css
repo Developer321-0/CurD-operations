@@ -1,0 +1,118 @@
+/* swagger-theme.css — a quick FlyRank-branded skin for Swagger UI.
+   Purely cosmetic: doesn't touch any endpoint behavior. */
+
+:root {
+  --fr-bg: #0e1420;
+  --fr-panel: #141b2b;
+  --fr-accent: #22d3ee;
+  --fr-accent-2: #a78bfa;
+  --fr-text: #e5e9f0;
+}
+
+body {
+  background: var(--fr-bg) !important;
+}
+
+.swagger-ui, .swagger-ui .info, .swagger-ui .opblock-tag, .swagger-ui table {
+  color: var(--fr-text);
+}
+
+/* Hide the default topbar (green Swagger logo bar) */
+.swagger-ui .topbar {
+  display: none;
+}
+
+/* Title + version badges */
+.swagger-ui .info .title {
+  color: var(--fr-accent) !important;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.swagger-ui .info .title small {
+  background: linear-gradient(135deg, var(--fr-accent), var(--fr-accent-2));
+  border-radius: 6px;
+}
+
+/* Section headers (default, tags) */
+.swagger-ui .opblock-tag {
+  border-bottom: 1px solid #223049;
+  color: var(--fr-accent) !important;
+}
+
+/* Operation blocks per method, color-coded */
+.swagger-ui .opblock.opblock-get {
+  background: rgba(34, 211, 238, 0.06);
+  border-color: var(--fr-accent);
+}
+.swagger-ui .opblock.opblock-get .opblock-summary-method {
+  background: var(--fr-accent);
+}
+
+.swagger-ui .opblock.opblock-post {
+  background: rgba(167, 139, 250, 0.08);
+  border-color: var(--fr-accent-2);
+}
+.swagger-ui .opblock.opblock-post .opblock-summary-method {
+  background: var(--fr-accent-2);
+}
+
+.swagger-ui .opblock.opblock-put {
+  background: rgba(250, 204, 21, 0.08);
+  border-color: #facc15;
+}
+.swagger-ui .opblock.opblock-put .opblock-summary-method {
+  background: #facc15;
+  color: #111;
+}
+
+.swagger-ui .opblock.opblock-delete {
+  background: rgba(248, 113, 113, 0.08);
+  border-color: #f87171;
+}
+.swagger-ui .opblock.opblock-delete .opblock-summary-method {
+  background: #f87171;
+}
+
+/* Panels, inputs, code blocks */
+.swagger-ui .opblock .opblock-section-header {
+  background: var(--fr-panel);
+}
+
+.swagger-ui select, .swagger-ui input[type=text], .swagger-ui textarea {
+  background: var(--fr-panel);
+  color: var(--fr-text);
+  border: 1px solid #2a3550;
+  border-radius: 6px;
+}
+
+.swagger-ui .microlight, .swagger-ui .highlight-code {
+  background: #0a0f19 !important;
+  border-radius: 8px;
+}
+
+/* Buttons */
+.swagger-ui .btn.execute {
+  background: linear-gradient(135deg, var(--fr-accent), var(--fr-accent-2));
+  border: none;
+  color: #0e1420;
+  font-weight: 700;
+  border-radius: 8px;
+}
+
+.swagger-ui .btn.try-out__btn {
+  border-radius: 8px;
+  border-color: var(--fr-accent);
+  color: var(--fr-accent);
+}
+
+/* Response status pills */
+.swagger-ui .responses-table .response-col_status {
+  color: var(--fr-accent);
+  font-weight: 700;
+}
+
+/* Scrollbar, just for polish */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--fr-bg); }
+::-webkit-scrollbar-thumb { background: #2a3550; border-radius: 6px; }
