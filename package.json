@@ -1,0 +1,14 @@
+{
+  "name": "flyrank-crud-a1",
+  "version": "1.0.0",
+  "description": "FlyRank Internship - Backend Track - W2 A1: a small CRUD API for a to-do list",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test_checkpoints.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
