@@ -44,4 +44,16 @@ app.get('/tasks/:id', (req, res) => {
   res.status(200).json(task);
 });
 
+// --- Stage 3: create -----------------------------------------------------
+
+app.post('/tasks', (req, res) => {
+  const { title } = req.body ?? {};
+  if (!title || typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'title is required and must not be empty' });
+  }
+  const newTask = { id: nextId++, title, done: false };
+  tasks.push(newTask);
+  res.status(201).json(newTask);
+});
+
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
