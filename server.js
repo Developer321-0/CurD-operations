@@ -1,27 +1,25 @@
 // server.js — FlyRank Internship, Backend Track, Week 2, Assignment A1
-// Stage 0: hello server. Started from a plain Node http server with two
-// endpoints (/ and /time) and grows from here, stage by stage.
+// A small CRUD API for a to-do list.
 
-import http from 'node:http';
+import express from 'express';
 
-const server = http.createServer((req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-
-  if (req.method === 'GET' && req.url === '/') {
-    res.statusCode = 200;
-    res.end(JSON.stringify({ message: 'first API endpoint.' }));
-    return;
-  }
-
-  if (req.method === 'GET' && req.url === '/time') {
-    res.statusCode = 200;
-    res.end(JSON.stringify({ currentTime: new Date().toISOString() }));
-    return;
-  }
-
-  res.statusCode = 404;
-  res.end(JSON.stringify({ error: 'Not found' }));
-});
+const app = express();
+app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+
+// --- Stage 1: root and health endpoints --------------------------------
+
+app.get('/', (req, res) => {
+  res.status(200).json({
+    name: 'Task API',
+    version: '1.0',
+    endpoints: ['/tasks'],
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
