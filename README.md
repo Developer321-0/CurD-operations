@@ -1,19 +1,53 @@
-# FlyRank Task API — Assignment 1 (in-memory CRUD)
+# FlyRank Tasks API — CRUD backed by SQLite (JavaScript / Express)
 
-**Assignment 1 (Backend Track, Week 2):** a small API that manages a
-to-do list — create, read, update, and delete tasks — tested in Swagger
-UI. Data lives in memory (a JS array), so it's gone on restart. That's
-by design: Week 3 (A2) fixes it with SQLite.
+**Assignment 2 (Backend Track, Week 3):** take the in-memory CRUD API
+from Assignment 1 and move its storage to a real SQLite database — same
+endpoints, but the data now survives a restart. Same repo, same lane as
+A1 — this is that project growing, not a new one.
 
-## How to run it
+## Why SQLite?
+
+- **Single file.** The whole database is `tasks.db`, sitting next to
+  the code. No server process to install, configure, or keep running.
+- **Survives restarts.** Unlike a JS array, the file on disk doesn't
+  disappear when the process stops.
+- Right tool for a small, single-process app like this one. A team
+  hammering the same database from many services concurrently would
+  eventually reach for Postgres — but the API wouldn't need to change
+  when that day comes, only the storage layer.
+
+## Why `node:sqlite` instead of `better-sqlite3`
+
+The assignment's suggested library is `better-sqlite3`, but it needs to
+compile native code at install time (it downloads Node's C headers and
+runs `node-gyp`). On a locked-down network that install can fail.
+
+Since Node 22.5, there's a **built-in** SQLite module, `node:sqlite`.
+It's the same idea as Python's `sqlite3` — already there, nothing to
+`npm install` for the database part. It's marked experimental (you'll
+see a one-line warning in the console), but it's fully functional and
+avoids the native-compile step entirely. If you're on an older Node or
+prefer the more established library, swapping in `better-sqlite3` only
+touches `server.js`'s database calls — the rest of the API is
+unaffected either way.
+
+## Where the database lives
+
+`tasks.db`, created automatically the first time the app starts. It's
+git-ignored (see `.gitignore`), so a fresh clone always starts from a
+clean, auto-seeded database instead of shipping example data in the repo.
+
+## Run it
 
 ```bash
 npm install
 npm start
 ```
 
-Server starts on `http://localhost:3000`. Swagger UI (interactive docs)
-is at `http://localhost:3000/docs`.
+Then visit `http://localhost:3000/tasks`. On first run, `tasks.db` and
+the `tasks` table are created automatically, and three example tasks
+are seeded once (restarting never duplicates them — the seed only
+fires when `SELECT COUNT(*)` comes back `0`).
 
 To run the automated checkpoint suite instead of curl-ing by hand:
 
@@ -23,72 +57,95 @@ npm test
 
 ## Endpoints
 
+Identical shapes to Assignment 1 — only the storage underneath changed.
+
 | Method | Path          | Notes                                          |
 |--------|---------------|--------------------------------------------------|
 | GET    | `/`           | API description                                 |
 | GET    | `/health`     | `{"status": "ok"}`                              |
-| GET    | `/tasks`      | list all; supports `?done=true`, `?search=milk` |
-| GET    | `/tasks/:id`  | one task; 404 if unknown                        |
-| POST   | `/tasks`      | create; 400 if `title` missing/empty            |
-| PUT    | `/tasks/:id`  | update `title`/`done`; 404 if unknown, 400 if invalid body |
-| DELETE | `/tasks/:id`  | 204 on success; 404 if unknown                  |
+| GET    | `/tasks`      | supports `?search=`, `?done=`, `?sort=title`    |
+| GET    | `/tasks/:id`  | 404 + `{"error": "Task {id} not found"}` if missing |
+| POST   | `/tasks`      | 400 on empty/missing title, else 201            |
+| PUT    | `/tasks/:id`  | 404 if missing, else 200 with updated task      |
+| DELETE | `/tasks/:id`  | 204 on success; 404 if missing                  |
 | GET    | `/stats`      | `{"total": n, "done": n, "open": n}` (extra)    |
 | POST   | `/reset`      | restores the 3 example tasks (extra)            |
+| GET    | `/docs`       | Swagger UI, FlyRank-themed                      |
 
-## Example curl output
+All queries use `?` parameterized placeholders — no request value is
+ever glued into a SQL string.
 
+## Stage 4 — SQL by hand
+
+Opened `tasks.db` directly (in DB Browser for SQLite — screenshot
+below) and ran these queries, then confirmed the running API's
+`GET /tasks` reflected each change immediately with no restart, because
+the API and DB Browser read the exact same file:
+
+```sql
+SELECT * FROM tasks;                     -- 3 rows: Buy milk, Write report, Walk the dog
+SELECT * FROM tasks WHERE done = 1;      -- 1 row: Walk the dog
+SELECT COUNT(*) FROM tasks;              -- 3
+UPDATE tasks SET done = 1;               -- marks all 3 tasks done
+DELETE FROM tasks WHERE done = 1;        -- clears the table
 ```
-$ curl -i -X POST http://localhost:3000/tasks -H "Content-Type: application/json" -d '{"title":"Buy milk"}'
-HTTP/1.1 201 Created
-Content-Type: application/json; charset=utf-8
 
-{"id":4,"title":"Buy milk","done":false}
-```
+**Example query and what it returned:** `SELECT * FROM tasks WHERE done = 1;`
+returned exactly one row — `(3, 'Walk the dog', 1)` — proving the
+`WHERE` clause filters at the database level, not in application code.
 
-## Swagger UI
+> **DB Browser screenshot:** add your own screenshot here
+> (`docs/db-browser.png`) — this repo was built in a headless
+> environment, so the capture needs to happen locally: open DB Browser
+> for SQLite, open `tasks.db`, go to "Browse Data", and screenshot it.
 
-`GET /docs` serves interactive documentation generated from
-`openapi.json`. Every endpoint is listed with a "Try it out" button that
-sends real requests to the running server — the full CRUD cycle
-(create → read → update → delete) works there with no curl needed.
+## Proof the API didn't change
 
-> **Screenshot:** add your own screenshot of `/docs` here
-> (`docs/swagger-screenshot.png`) — this repo was built in a headless
-> environment, so the visual capture needs to happen locally: run
-> `npm start`, open `http://localhost:3000/docs`, and screenshot it.
-
-## The mortality experiment
-
-Created a task, restarted the server, and called `GET /tasks` again:
-the new task was gone, back down to the 3 seeded examples. That's not a
-bug — a plain JS array only exists inside the running process's memory,
-so when the process exits, so does the array. This observation is the
-entire reason Assignment 2 (SQLite persistence) exists. It's proven
-automatically in `test_checkpoints.js`.
+The same `curl` commands and Swagger UI "Try it out" clicks from
+Assignment 1 pass unchanged against this SQLite-backed version — same
+routes, same request/response shapes, same status codes. That's the
+proof that storage really is just an implementation detail: clients
+never see, and never needed to know, whether their data lived in a JS
+array or a SQLite file.
 
 ## Extras built
 
-- **Filter:** `GET /tasks?done=true`
-- **Search:** `GET /tasks?search=milk`
-- **Stats:** `GET /stats`
-- **Reset:** `POST /reset` restores the 3 example tasks — handy for demos
+- **Search:** `GET /tasks?search=milk` → `WHERE title LIKE ?`
+- **Filter by status:** `GET /tasks?done=true` → `WHERE done = ?`
+- **Sort:** `GET /tasks?sort=title` → `ORDER BY title`
+- **Stats:** `GET /stats` computed with `SELECT COUNT(*)` in SQL
+- **Reset:** `POST /reset` clears and re-seeds via SQL, in a transaction
+- **Index:** `CREATE INDEX idx_tasks_title ON tasks (title)` — lets
+  SQLite look up or order by `title` without scanning every row,
+  backing the `?sort=title` extra
+- **Transaction:** both the initial seed and `POST /reset` wrap their
+  inserts in `BEGIN`/`COMMIT` (with `ROLLBACK` on error), so they're
+  all-or-nothing — a failure partway through can't leave the table
+  half-seeded
 
 ## Project structure
 
 ```
-server.js              # Express app: all CRUD routes
-openapi.json            # OpenAPI 3.0 spec, served at /docs via Swagger UI
-test_checkpoints.js     # automated version of every checkpoint in the assignment
+server.js               # Express app + SQLite storage layer (node:sqlite)
+openapi.json             # OpenAPI 3.0 spec, served at /docs
+swagger-theme.css        # custom Swagger UI theme
+test_checkpoints.js      # automated version of every checkpoint below
 package.json
 .gitignore
 ```
 
 ## Checkpoints verified
 
-- `GET /` and `GET /health` return 200 + correct JSON shapes.
-- `GET /tasks/1` → 200, `GET /tasks/99` → 404 + `{"error": "Task 99 not found"}`.
-- `POST /tasks` with a valid title → 201 + the new task; empty body → 400.
-- Full cycle (create → update → mark done → delete) confirmed via `GET /tasks`
-  at each step, with `201`/`200`/`204`/`404` all correct.
-- `/docs` lists every endpoint; "Try it out" works for the full CRUD cycle.
-- In-memory data is confirmed lost on restart (see above).
+- Restarted the server 3x on a fresh database: `GET /tasks` returned
+  exactly 3 tasks every time — the seed never duplicated.
+- `curl -i /tasks/999` -> `404` + `{"error": "Task 999 not found"}`.
+- Created a task via `POST`, restarted the server, `GET /tasks` still
+  showed it — the first time data survived a restart.
+- Full cycle: create -> `PUT` to mark done -> `DELETE`, confirming with
+  `GET /tasks` after each step and correct `201`/`200`/`204`/`404`
+  status codes throughout.
+- Edited `tasks.db` directly with raw SQL, then called the live API
+  with no restart — same data, same file, no syncing step.
+- A `?search=` value containing `' OR '1'='1` was treated as a literal
+  string, not SQL — confirming the parameterized placeholders work.
+- All 13 automated checks in `test_checkpoints.js` pass.
