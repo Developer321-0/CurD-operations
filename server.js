@@ -1,10 +1,12 @@
-// server.js — FlyRank Internship, Backend Track, Week 2, Assignment A1
-// A small CRUD API for a to-do list.
+// server.js — FlyRank Internship, Backend Track, Week 3, Assignment A2
+// Same CRUD API as A1, but storage now lives in a SQLite file (tasks.db)
+// instead of a JS array, so data survives a server restart.
 
 import express from 'express';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import swaggerUi from 'swagger-ui-express';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +17,42 @@ const app = express();
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+
+// --- Stage 0: create the database ----------------------------------------
+// node:sqlite is built into Node (18.20+/22.5+, stable behind an
+// experimental flag) — like Python's sqlite3, nothing to `npm install`.
+// Opening a file that doesn't exist yet creates it.
+const DB_PATH = path.join(__dirname, 'tasks.db');
+const db = new DatabaseSync(DB_PATH);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tasks (
+    id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    done  INTEGER NOT NULL DEFAULT 0
+  )
+`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_title ON tasks (title)');
+
+const rowCount = db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n;
+if (rowCount === 0) {
+  // Wrapped in a transaction: either all three seed rows land, or none do.
+  const insert = db.prepare('INSERT INTO tasks (title, done) VALUES (?, ?)');
+  db.exec('BEGIN');
+  try {
+    insert.run('Buy milk', 0);
+    insert.run('Write report', 0);
+    insert.run('Walk the dog', 1);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+}
+
+function rowToTask(row) {
+  return { id: row.id, title: row.title, done: Boolean(row.done) };
+}
 
 // --- Stage 5: Swagger UI --------------------------------------------------
 app.use(
@@ -40,54 +78,59 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
-// --- Stage 2: read endpoints (in-memory "database") ---------------------
-
-let tasks = [
-  { id: 1, title: 'Buy milk', done: false },
-  { id: 2, title: 'Write report', done: false },
-  { id: 3, title: 'Walk the dog', done: true },
-];
-let nextId = 4;
+// --- Stage 1: read endpoints (now backed by SQL SELECTs) ----------------
 
 app.get('/tasks', (req, res) => {
-  let result = tasks;
-  const { done, search } = req.query;
+  const { done, search, sort } = req.query;
+  let sql = 'SELECT * FROM tasks';
+  const clauses = [];
+  const params = [];
 
-  if (done !== undefined) {
-    const wantDone = done === 'true';
-    result = result.filter((t) => t.done === wantDone);
-  }
   if (search) {
-    const needle = String(search).toLowerCase();
-    result = result.filter((t) => t.title.toLowerCase().includes(needle));
+    clauses.push('title LIKE ?');
+    params.push(`%${search}%`);
   }
+  if (done !== undefined) {
+    clauses.push('done = ?');
+    params.push(done === 'true' ? 1 : 0);
+  }
+  if (clauses.length) sql += ' WHERE ' + clauses.join(' AND ');
+  if (sort === 'title') sql += ' ORDER BY title';
 
-  res.status(200).json(result);
+  const rows = db.prepare(sql).all(...params);
+  res.status(200).json(rows.map(rowToTask));
 });
 
 app.get('/stats', (req, res) => {
-  const total = tasks.length;
-  const done = tasks.filter((t) => t.done).length;
+  const total = db.prepare('SELECT COUNT(*) AS n FROM tasks').get().n;
+  const done = db.prepare('SELECT COUNT(*) AS n FROM tasks WHERE done = 1').get().n;
   res.status(200).json({ total, done, open: total - done });
 });
 
 app.post('/reset', (req, res) => {
-  tasks = [
-    { id: 1, title: 'Buy milk', done: false },
-    { id: 2, title: 'Write report', done: false },
-    { id: 3, title: 'Walk the dog', done: true },
-  ];
-  nextId = 4;
-  res.status(200).json(tasks);
+  db.exec('BEGIN');
+  try {
+    db.exec('DELETE FROM tasks');
+    const insert = db.prepare('INSERT INTO tasks (title, done) VALUES (?, ?)');
+    insert.run('Buy milk', 0);
+    insert.run('Write report', 0);
+    insert.run('Walk the dog', 1);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  const rows = db.prepare('SELECT * FROM tasks').all();
+  res.status(200).json(rows.map(rowToTask));
 });
 
 app.get('/tasks/:id', (req, res) => {
   const id = Number(req.params.id);
-  const task = tasks.find((t) => t.id === id);
-  if (!task) {
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  if (!row) {
     return res.status(404).json({ error: `Task ${id} not found` });
   }
-  res.status(200).json(task);
+  res.status(200).json(rowToTask(row));
 });
 
 // --- Stage 3: create -----------------------------------------------------
@@ -97,17 +140,17 @@ app.post('/tasks', (req, res) => {
   if (!title || typeof title !== 'string' || !title.trim()) {
     return res.status(400).json({ error: 'title is required and must not be empty' });
   }
-  const newTask = { id: nextId++, title, done: false };
-  tasks.push(newTask);
-  res.status(201).json(newTask);
+  const result = db.prepare('INSERT INTO tasks (title, done) VALUES (?, ?)').run(title, 0);
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json(rowToTask(row));
 });
 
 // --- Stage 4: update & delete --------------------------------------------
 
 app.put('/tasks/:id', (req, res) => {
   const id = Number(req.params.id);
-  const task = tasks.find((t) => t.id === id);
-  if (!task) {
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  if (!existing) {
     return res.status(404).json({ error: `Task ${id} not found` });
   }
 
@@ -122,18 +165,21 @@ app.put('/tasks/:id', (req, res) => {
     return res.status(400).json({ error: 'provide title and/or done to update' });
   }
 
-  if (title !== undefined) task.title = title;
-  if (done !== undefined) task.done = done;
-  res.status(200).json(task);
+  const newTitle = title !== undefined ? title : existing.title;
+  const newDone = done !== undefined ? (done ? 1 : 0) : existing.done;
+  db.prepare('UPDATE tasks SET title = ?, done = ? WHERE id = ?').run(newTitle, newDone, id);
+
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  res.status(200).json(rowToTask(row));
 });
 
 app.delete('/tasks/:id', (req, res) => {
   const id = Number(req.params.id);
-  const index = tasks.findIndex((t) => t.id === id);
-  if (index === -1) {
+  const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+  if (!existing) {
     return res.status(404).json({ error: `Task ${id} not found` });
   }
-  tasks.splice(index, 1);
+  db.prepare('DELETE FROM tasks WHERE id = ?').run(id);
   res.status(204).end();
 });
 

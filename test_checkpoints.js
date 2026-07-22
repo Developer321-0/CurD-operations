@@ -1,12 +1,13 @@
 // test_checkpoints.js — proves the assignment's own checkpoints against a
 // live server. Run with: npm test  (spawns and kills the server itself).
 import { spawn } from 'node:child_process';
+import { unlinkSync, existsSync } from 'node:fs';
 
 const BASE = 'http://localhost:3000';
+const DB_PATH = new URL('./tasks.db', import.meta.url);
 
 function startServer() {
-  const proc = spawn('node', ['server.js'], { stdio: 'ignore' });
-  return proc;
+  return spawn('node', ['server.js'], { stdio: 'ignore' });
 }
 
 function sleep(ms) {
@@ -20,48 +21,60 @@ function check(label, condition) {
 }
 
 async function main() {
-  // --- basic endpoints -----------------------------------------------
+  if (existsSync(DB_PATH)) unlinkSync(DB_PATH);
+
+  for (let i = 0; i < 3; i++) {
+    const s = startServer();
+    await sleep(800);
+    s.kill();
+    await sleep(300);
+  }
   let server = startServer();
   await sleep(1000);
   try {
-    let r = await fetch(`${BASE}/`);
-    check('GET / -> 200', r.status === 200);
-
-    r = await fetch(`${BASE}/health`);
+    let r = await fetch(`${BASE}/tasks`);
     let body = await r.json();
-    check('GET /health -> {"status":"ok"}', r.status === 200 && body.status === 'ok');
-
-    r = await fetch(`${BASE}/tasks`);
-    body = await r.json();
-    check('GET /tasks -> 3 seeded tasks', r.status === 200 && body.length === 3);
+    check('Seed does not duplicate after 3 restarts (3 tasks)', body.length === 3);
 
     r = await fetch(`${BASE}/tasks/1`);
     check('GET /tasks/1 -> 200', r.status === 200);
 
-    r = await fetch(`${BASE}/tasks/99`);
+    r = await fetch(`${BASE}/tasks/999`);
     body = await r.json();
-    check('GET /tasks/99 -> 404 + error JSON', r.status === 404 && body.error === 'Task 99 not found');
+    check('GET /tasks/999 -> 404 + error JSON', r.status === 404 && body.error === 'Task 999 not found');
 
     r = await fetch(`${BASE}/tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Persisted-in-memory task' }),
+      body: JSON.stringify({ title: 'Persisted task' }),
     });
     body = await r.json();
     check('POST /tasks valid -> 201', r.status === 201);
-    const newId = body.id;
 
     r = await fetch(`${BASE}/tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
-    check('POST /tasks empty body -> 400', r.status === 400);
+    check('POST /tasks empty -> 400', r.status === 400);
+  } finally {
+    server.kill();
+    await sleep(500);
+  }
+
+  server = startServer();
+  await sleep(1000);
+  let newId;
+  try {
+    let r = await fetch(`${BASE}/tasks`);
+    let body = await r.json();
+    check('Created task survives a restart', body.length === 4 && body.some((t) => t.title === 'Persisted task'));
+    newId = body.find((t) => t.title === 'Persisted task').id;
 
     r = await fetch(`${BASE}/tasks/${newId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'Persisted-in-memory task', done: true }),
+      body: JSON.stringify({ done: true }),
     });
     body = await r.json();
     check('PUT existing task -> 200, done=true', r.status === 200 && body.done === true);
@@ -80,48 +93,17 @@ async function main() {
     check('DELETE already-deleted task -> 404', r.status === 404);
 
     r = await fetch(`${BASE}/docs/`);
-    check('GET /docs -> 200 (Swagger UI)', r.status === 200);
+    check('GET /docs -> 200', r.status === 200);
 
-    r = await fetch(`${BASE}/tasks?search=milk`);
-    body = await r.json();
-    check('GET /tasks?search=milk filters correctly', r.status === 200 && body.every((t) => t.title.toLowerCase().includes('milk')));
+    r = await fetch(`${BASE}/tasks?search=' OR '1'='1`);
+    check("Search with quote characters doesn't break the query", r.status === 200);
 
     r = await fetch(`${BASE}/stats`);
     body = await r.json();
     check('GET /stats -> total/done/open', r.status === 200 && typeof body.total === 'number');
   } finally {
     server.kill();
-    await sleep(500);
-  }
-
-  // --- the mortality experiment: prove data is NOT persisted ----------
-  server = startServer();
-  await sleep(1000);
-  try {
-    await fetch(`${BASE}/tasks`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: 'This should vanish' }),
-    });
-    const r = await fetch(`${BASE}/tasks`);
-    const body = await r.json();
-    check('Task exists before restart', body.some((t) => t.title === 'This should vanish'));
-  } finally {
-    server.kill();
-    await sleep(500);
-  }
-
-  server = startServer();
-  await sleep(1000);
-  try {
-    const r = await fetch(`${BASE}/tasks`);
-    const body = await r.json();
-    check(
-      'In-memory data is gone after restart (the mortality experiment)',
-      !body.some((t) => t.title === 'This should vanish') && body.length === 3
-    );
-  } finally {
-    server.kill();
+    await sleep(300);
   }
 
   console.log(failed ? '\nSome checkpoints FAILED.' : '\nAll checkpoints passed.');

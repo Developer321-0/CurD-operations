@@ -1,7 +1,7 @@
 {
-  "name": "flyrank-crud-a1",
+  "name": "flyrank-crud-a2",
   "version": "1.0.0",
-  "description": "FlyRank Internship - Backend Track - W2 A1: a small CRUD API for a to-do list",
+  "description": "FlyRank Internship - Backend Track - W3 A2: CRUD API backed by SQLite",
   "main": "server.js",
   "type": "module",
   "scripts": {
