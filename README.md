@@ -264,3 +264,123 @@ the middleware is genuinely reusable, and `/auth/logout` returned 204.
   `/protected/profile` — verified with the same real token.
 - `POST /auth/logout` → 204 with a valid token.
 - `/docs` shows the lock icon on all three protected routes.
+
+
+# Stage 7 — The AI vs Me
+
+## My prompt
+
+```
+Build a secured Express.js API with Supabase authentication. Requirements:
+
+- Node.js + Express, ES modules
+- Supabase JS SDK for auth, using SUPABASE_URL and SUPABASE_KEY from a .env file
+- Routes:
+  - POST /auth/signup - body {email, password}, creates a Supabase user, returns 201 with the user
+  - POST /auth/login - body {email, password}, returns 200 with access_token and refresh_token
+  - POST /auth/logout - requires a bearer token, ends the session, returns 204
+  - GET /protected/profile - requires a valid bearer token, returns the user's id/email
+  - GET /public/info - no auth needed, returns a welcome message
+- Missing email/password on signup or login should return 400
+- Wrong credentials on login should return 401
+- Missing or invalid token on protected routes should return 401
+- Extract the token-checking logic into reusable middleware so I can protect more than one route with it
+- Set up Swagger UI at /docs with bearer token support so I can test protected routes from the browser
+```
+
+The AI's full output is in `ai-version/server.js`.
+
+## What it did well
+
+- Correctly built all five routes with the right methods and paths
+- Got the 400/401/201/204 status codes right in the straightforward cases
+- Wrote signup/login/`getUser` calls to the Supabase SDK correctly
+- Produced working Swagger UI wiring
+
+## Where it broke — token extraction (the exact thing the assignment asks about)
+
+I isolated just the extraction logic from both versions and ran the same
+inputs through each:
+
+| Header sent | My extraction | AI's extraction |
+|---|---|---|
+| `Bearer eyJabc123` (normal) | `eyJabc123` | `eyJabc123` |
+| *(no header)* | `null` | `undefined` (functionally the same) |
+| `Basic eyJabc123` (**wrong scheme**) | `null` — correctly refused | **`eyJabc123`** — extracted anyway |
+| `bearer eyJabc123` (lowercase) | `null` — refused | `eyJabc123` — extracted anyway |
+| `Bearer  eyJabc123` (double space) | `eyJabc123` — handled | `""` — broken, would 401 a legitimate client |
+
+The AI's extraction is `req.headers.authorization?.split(' ')[1]` — it
+never checks that the first word is actually `Bearer`. It just grabs
+whatever's in the second position. That means a request sent with
+`Authorization: Basic eyJabc123` — a completely different auth scheme —
+gets its second token pulled out and handed to Supabase as if it were a
+bearer token. In this test it still 401'd, but only because Supabase
+rejected the token's *content*, not because my server recognized the
+scheme was wrong. If a client ever sent a real, valid JWT under the
+wrong scheme name by mistake, the AI's version would authenticate it
+anyway — the scheme check isn't just pedantry, it's the actual security
+boundary the assignment is testing.
+
+My version's `authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : null`
+checks the scheme explicitly and trims whitespace, so it survives the
+double-space case a real client library might send, and correctly
+rejects anything that isn't literally `Bearer <token>`.
+
+## Where it broke — logout doesn't logout
+
+```js
+// AI version
+app.post('/auth/logout', authenticate, async (req, res) => {
+  await supabase.auth.signOut();
+  res.status(204).send();
+});
+```
+
+Two problems in two lines:
+
+1. **`supabase.auth.signOut()` is called with no argument.** In a
+   stateless REST API, the shared `supabase` client isn't holding a
+   per-request session — each request is a different user. Calling
+   `signOut()` with nothing doesn't target the specific caller's token
+   at all; it operates on whatever (if anything) the shared client
+   instance thinks its own session is, which in this architecture is
+   essentially undefined behavior. My version passes `req.token`
+   explicitly: `supabase.auth.signOut(req.token)`.
+
+2. **The result is never checked.** If `signOut` fails, the AI's code
+   still unconditionally returns `204` — telling the client "you're
+   logged out" whether or not that's true. Mine checks `error` and
+   returns `400` with the real message if the sign-out call itself
+   failed.
+
+Put together: the AI's `/auth/logout` route asks Supabase to sign out
+approximately nobody, and reports success regardless.
+
+## What my prompt forgot to specify
+
+Comparing the two side by side surfaced gaps in my own prompt, not just
+the AI's output:
+
+- I never specified the **exact error message text** (`"Invalid login
+  credentials"`, `"Access token required"`, `"Invalid or expired
+  token"`) — the AI invented its own (`"Unauthorized"` for every 401
+  case), which is reasonable but not what the spec actually wants.
+- I didn't mention a **second protected route** to prove the middleware
+  is reusable — the AI never had a reason to build one, so there's no
+  evidence in its output that its `authenticate` function generalizes
+  beyond the one route it's attached to.
+- I didn't say anything about **what the profile response should
+  include** — the AI returned `id`/`email` only; my actual spec also
+  wanted `created_at`.
+- I didn't mention `.env.example`, `.gitignore`, or "never commit your
+  secrets" at all — the AI's output has no `.gitignore` or example env
+  file, because I never asked for one.
+
+## One-sentence summary
+
+The token-scheme check and the logout-with-no-argument bug are the two
+findings that actually matter here — everything else was cosmetic;
+these two are the kind of gap that would matter in a real app,
+and both trace back to the AI treating "extract the token" as a string
+operation instead of an authorization-scheme check.
