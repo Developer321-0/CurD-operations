@@ -1,17 +1,20 @@
 {
-  "name": "flyrank-crud-a2",
+  "name": "flyrank-crud-a4",
   "version": "1.0.0",
-  "description": "FlyRank Internship - Backend Track - W3 A2: CRUD API backed by SQLite",
+  "description": " Supabase-backed auth (signup, login, logout, protected routes)",
   "main": "server.js",
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node test_checkpoints.js"
+    "test": "node test_checkpoints.js",
+    "test:auth": "node test_auth_checkpoints.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "swagger-ui-express": "^5.0.1"
   }
